@@ -156,3 +156,13 @@ input.addEventListener("input", () => document.querySelectorAll(".sample").forEa
 input.addEventListener("input", () => { automaticFindings = []; });
 document.querySelector("#auto-check-button").addEventListener("click", autoCheckMessage);
 document.querySelector("#result-button").addEventListener("click", showResult);
+
+const reportSection = document.createElement("section");
+reportSection.className = "research-note";
+reportSection.innerHTML = `<p class="eyebrow">전화 신고·글 신고</p><h2>의심 전화번호를 안전하게 접수하세요</h2><p>개인 이름·주소는 쓰지 마세요. 의심 신고가 같은 번호에 5건 쌓이면 ‘신고 필요’로 자동 분류됩니다.</p><p><a href="tel:112">긴급 피해·범죄 112로 전화</a> · <a href="tel:118">불법스팸 118로 전화</a></p><form id="phone-report"><label>전화번호<input required name="phone" placeholder="010-1234-5678"></label><label>분류<select name="kind"><option value="suspicious">의심 전화번호</option><option value="dangerous">위험 전화번호</option></select></label><label>신고 글<textarea required name="text" minlength="10" maxlength="500" placeholder="통화 내용과 의심 이유를 10~500자로 적어 주세요."></textarea></label><button class="result-button">신고 글 저장</button><p id="report-status" class="hint" aria-live="polite"></p></form>`;
+document.querySelector(".safe-actions").before(reportSection);
+document.querySelector("#phone-report").addEventListener("submit", async (event) => {
+  event.preventDefault(); const form = new FormData(event.currentTarget); const status = document.querySelector("#report-status");
+  status.textContent = "저장 중…";
+  try { const response = await fetch("https://rzzrwjfwrioocysqapbl.supabase.co/rest/v1/rpc/submit_phone_report", {method:"POST",headers:{"Content-Type":"application/json","apikey":"sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze","Authorization":"Bearer sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze"},body:JSON.stringify({p_phone:form.get("phone"),p_kind:form.get("kind"),p_text:form.get("text")})}); const data=await response.json(); if(!response.ok) throw new Error(data.message||"저장 실패"); status.textContent=`저장됨: ${data.status === "reported" ? "신고 필요 전화번호" : data.status === "dangerous" ? "위험 전화번호" : "의심 전화번호"}로 분류되었습니다.`; event.currentTarget.reset(); } catch(error) { status.textContent=`저장하지 못했습니다: ${error.message}`; }
+});
