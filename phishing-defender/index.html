@@ -3,22 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="의심스러운 메시지를 클릭하기 전, 다섯 가지 위험 신호를 확인하는 개인정보 비저장 점검 도구입니다.">
+  <meta name="description" content="의심 메시지의 근거를 확인하고, 이미 행동했다면 상황별 대응을 안내하는 점검 도구입니다.">
   <title>피디 | Phishing Defender</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="hero">
     <a class="brand" href="#top" aria-label="피디 처음으로">피디 <span>P.D.</span></a>
-    <p class="eyebrow">P.D. · 프리미엄 중간 점검 2차</p>
-    <h1>의심 메시지,<br>누르기 전에 확인하세요.</h1>
+    <p class="eyebrow">P.D. · 프리미엄 최종 제출</p>
+    <h1>의심 메시지,<br>지금 상황부터 확인하세요.</h1>
     <p class="lead">이 앱은 의심스러운 메시지를 받은 사람이 <strong>발신자·링크·요청·압박 표현·맥락</strong>을 확인해 안전한 다음 행동을 고르도록 돕습니다.</p>
-    <p class="privacy">메시지와 스크린샷은 이 브라우저에서 분석하며 서버에 보내거나 저장하지 않습니다. 아래 전화번호 신고는 별도 저장 기능입니다.</p>
+    <p class="privacy">메시지·스크린샷·대응 선택은 이 브라우저에서 처리합니다. 전화번호 신고는 별도 서버로 전송됩니다.</p>
+    <a class="start urgent-start" href="#already-acted">이미 행동했어요 · 바로 대응 보기 ↓</a>
     <p><a href="validation.html">가상 사례 30개로 1차·2차 비교하기 →</a></p>
     <a class="start" href="#message">5단계 점검 시작 <span aria-hidden="true">↓</span></a>
   </header>
 
   <main id="top">
+    <section id="already-acted" class="panel action-response" aria-labelledby="already-title">
+      <p class="eyebrow">먼저 대응하기</p><h2 id="already-title">이미 링크를 눌렀거나 정보를 보냈나요?</h2>
+      <p>해당하는 행동을 모두 선택하세요. 메시지 분석을 마치지 않아도 바로 다음 단계를 볼 수 있습니다. 선택은 서버에 보내지 않습니다.</p>
+      <div id="action-options" class="action-options"></div>
+      <div id="action-guidance" class="guidance" aria-live="polite"></div>
+      <p class="hint">긴급 피해가 의심되면 안내를 기다리지 말고 <a href="tel:112">112</a> 또는 이용 중인 금융회사에 바로 연락하세요. 악성 앱 상담은 <a href="tel:118">118</a>을 이용할 수 있습니다.</p>
+    </section>
     <section class="research-note" aria-labelledby="research-title">
       <p class="eyebrow">논문과의 연결</p>
       <h2 id="research-title">보안 점검표가 AI의 피싱 메일 분류에 미치는 영향</h2>
@@ -103,6 +111,12 @@
       </div>
       <div id="result-guidance" class="guidance"></div>
       <div id="analysis-summary" class="analysis-summary" hidden></div>
+      <h3>개인정보를 가린 점검 요약</h3>
+      <p class="hint">원문과 스크린샷은 요약에 넣지 않습니다. 자동으로 가린 내용도 완전하지 않을 수 있으니 공유 전에 직접 읽고 수정하세요.</p>
+      <label for="share-summary">공유할 내용 확인·수정</label>
+      <textarea id="share-summary" rows="8" maxlength="4000"></textarea>
+      <div class="summary-actions"><button id="copy-summary" class="sample" type="button">확인한 요약 복사</button><button id="download-summary" class="sample" type="button">텍스트로 저장</button></div>
+      <p id="summary-status" class="hint" role="status" aria-live="polite"></p>
       <p class="disclaimer">이 결과는 사용자가 선택한 점검 내용에 따른 안내이며, 피싱 여부를 확정하지 않습니다.</p>
     </section>
 
@@ -116,10 +130,12 @@
       </ul>
     </section>
   </main>
-  <footer>연구 기반 학습용 시제품 · 메시지·이미지는 브라우저에서 처리 · 전화번호 신고는 별도 저장<br><a href="plan.md">2차 계획서</a> · <a href="SUBMISSION-2.md">2차 제출 기록</a> · <a href="validation.html">30개 사례 비교</a> · <a href="plan-v1.md">1차 계획 보관본</a></footer>
+  <footer>연구 기반 학습용 시제품 · 메시지·이미지는 브라우저에서 처리 · 전화번호 신고는 별도 저장<br><a href="plan.md">최종 계획서</a> · <a href="SUBMISSION-3.md">최종 제출 기록</a> · <a href="validation.html">30개 사례 비교</a> · <a href="plan-v2.md">2차 계획 보관본</a></footer>
   <script src="analysis.js"></script>
   <script src="context.js"></script>
   <script src="scenarios.js"></script>
+  <script src="response.js"></script>
+  <script src="reports.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

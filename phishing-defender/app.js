@@ -26,6 +26,24 @@ const result = document.querySelector("#result");
 let automaticFindings = [];
 let latestAnalysis = null;
 let latestContextAssessment = null;
+const selectedActions = new Set();
+
+const actionOptions = document.querySelector('#action-options');
+actionOptions.innerHTML = PDResponse.order.slice().reverse().map(id => `<label class="action-choice"><input type="checkbox" value="${id}"><span>${PDResponse.actions[id].label}</span></label>`).join('');
+function renderActionGuidance() {
+  const guide = PDResponse.guide([...selectedActions]);
+  document.querySelector('#action-guidance').innerHTML = guide.ids.length
+    ? `<strong>${guide.urgent ? '지금 바로 대응하세요' : '선택한 행동에 맞는 다음 단계'}</strong>${guide.ids.map(id => `<h3>${PDResponse.actions[id].label}</h3><ol>${PDResponse.actions[id].steps.map(step => `<li>${step}</li>`).join('')}</ol>`).join('')}`
+    : '<strong>아직 행동하지 않았다면</strong><p>메시지 속 링크·번호를 이용하지 말고 원래 사용하던 공식 경로로 확인하세요.</p>';
+}
+actionOptions.addEventListener('change', event => {
+  if (!event.target.matches('input[type="checkbox"]')) return;
+  if (event.target.checked) selectedActions.add(event.target.value);
+  else selectedActions.delete(event.target.value);
+  renderActionGuidance();
+  if (!result.hidden) document.querySelector('#share-summary').value = PDResponse.summary({analysis:latestAnalysis,assessment:latestContextAssessment,selected:[...selectedActions],message:input.value});
+});
+renderActionGuidance();
 
 function renderChecklist() {
   checklist.innerHTML = checks.map((check) => `
@@ -159,6 +177,8 @@ function showResult() {
   } else {
     summary.hidden = true;
   }
+  document.querySelector('#share-summary').value = PDResponse.summary({analysis:latestAnalysis,assessment:latestContextAssessment,selected:[...selectedActions],message:input.value});
+  document.querySelector('#summary-status').textContent = '';
   result.hidden = false;
   result.focus();
 }
@@ -237,14 +257,74 @@ input.addEventListener("input", () => invalidateAnalysis(true));
 document.querySelector("#auto-check-button").addEventListener("click", autoCheckMessage);
 document.querySelector("#result-button").addEventListener("click", showResult);
 
+document.querySelector('#copy-summary').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(document.querySelector('#share-summary').value); document.querySelector('#summary-status').textContent = '현재 보이는 요약을 복사했습니다. 붙여넣기 전에 내용을 다시 확인하세요.'; }
+  catch { document.querySelector('#summary-status').textContent = '자동 복사에 실패했습니다. 요약을 선택해 직접 복사해 주세요.'; }
+});
+document.querySelector('#download-summary').addEventListener('click', () => {
+  const blob = new Blob([document.querySelector('#share-summary').value], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a'); link.href = url; link.download = 'pd-check-summary.txt'; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  document.querySelector('#summary-status').textContent = '현재 보이는 요약을 저장했습니다. 파일을 공유하기 전에 내용을 확인하세요.';
+});
+
 const reportSection = document.createElement("section");
 reportSection.className = "research-note";
-reportSection.innerHTML = `<p class="eyebrow">전화 신고·글 신고</p><h2>의심 전화번호를 안전하게 접수하세요</h2><p>개인 이름·주소는 쓰지 마세요. 의심 신고가 같은 번호에 5건 쌓이면 ‘신고 필요’로 자동 분류됩니다.</p><p><a href="tel:112">긴급 피해·범죄 112로 전화</a> · <a href="tel:118">불법스팸 118로 전화</a></p><form id="phone-report"><label>전화번호<input required name="phone" placeholder="010-1234-5678"></label><label>분류<select name="kind"><option value="suspicious">의심 전화번호</option><option value="dangerous">위험 전화번호</option></select></label><label>신고 글<textarea required name="text" minlength="10" maxlength="500" placeholder="통화 내용과 의심 이유를 10~500자로 적어 주세요."></textarea></label><button class="result-button">신고 글 저장</button><p id="report-status" class="hint" aria-live="polite"></p></form>`;
+reportSection.innerHTML = `<p class="eyebrow">신고 접수·처리 상태</p><h2>의심 전화번호를 접수하고 정정하세요</h2><p>사용자 신고는 사실 확인 전의 제보입니다. 신고 수만으로 번호를 위험하다고 확정하지 않습니다. 전화번호와 신고 글은 별도 서버에 전송됩니다. 이름·주소·계좌·인증번호는 쓰지 마세요.</p><p><a href="tel:112">긴급 피해 112</a> · <a href="tel:118">스미싱 상담 118</a></p><p id="report-availability" class="hint" role="status">신고 서버 연결을 확인하고 있습니다.</p><form id="phone-report"><label>전화번호<input required name="phone" inputmode="tel" placeholder="010-1234-5678"></label><label>내가 본 유형<select name="kind"><option value="suspicious">의심스러운 통화</option><option value="dangerous">금전·정보 요구가 있었음</option></select></label><label>신고 글<textarea required name="text" minlength="10" maxlength="500" placeholder="통화에서 들은 내용과 의심 이유를 10~500자로 적어 주세요."></textarea></label><button class="result-button" id="submit-report" disabled>제보 접수</button><p id="report-status" class="hint" role="status" aria-live="polite"></p></form><div class="report-followup"><h3>내 제보의 처리 상태</h3><p class="hint">접수 후 받은 조회 코드는 이 기기에 보관됩니다. 다른 기기에서 확인하려면 코드를 직접 보관하세요. 코드가 있는 사람은 상태를 조회하고 정정을 요청할 수 있습니다.</p><label for="report-code">조회 코드</label><input id="report-code" type="text" autocomplete="off" spellcheck="false" placeholder="접수 후 자동 입력됩니다"><div class="summary-actions"><button id="copy-report-code" class="sample" type="button">조회 코드 복사</button><button id="refresh-report" class="sample" type="button">상태 새로 확인</button></div><p id="report-state" class="guidance" aria-live="polite">아직 조회한 제보가 없습니다.</p><form id="correct-report"><label for="correction-reason">오인 신고·내용 오류 정정 요청</label><textarea id="correction-reason" minlength="10" maxlength="500" placeholder="어떤 내용이 잘못됐는지 10~500자로 적어 주세요."></textarea><button class="sample" type="submit">정정 요청 접수</button></form><p id="correction-status" class="hint" role="status" aria-live="polite"></p></div>`;
 document.querySelector(".safe-actions").before(reportSection);
-document.querySelector("#phone-report").addEventListener("submit", async (event) => {
-  event.preventDefault(); const reportForm = event.currentTarget; const form = new FormData(reportForm); const status = document.querySelector("#report-status");
-  status.textContent = "저장 중…";
-  try { const response = await fetch("https://rzzrwjfwrioocysqapbl.supabase.co/rest/v1/rpc/submit_phone_report", {method:"POST",headers:{"Content-Type":"application/json","apikey":"sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze","Authorization":"Bearer sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze"},body:JSON.stringify({p_phone:form.get("phone"),p_kind:form.get("kind"),p_text:form.get("text")})}); const data=await response.json(); if(!response.ok) throw new Error(data.message||"저장 실패"); status.textContent=`저장됨: ${data.status === "reported" ? "신고 필요 전화번호" : data.status === "dangerous" ? "위험 전화번호" : "의심 전화번호"}로 분류되었습니다.`; reportForm.reset(); } catch(error) { status.textContent=`저장하지 못했습니다: ${error.message}`; }
+const reportCode = document.querySelector('#report-code');
+const receiptKey = 'pd-report-receipt-v3';
+reportCode.value = localStorage.getItem(receiptKey) || '';
+function parseReceipt() {
+  const [id, secret] = reportCode.value.trim().split('.');
+  if (!/^[0-9a-f-]{36}$/i.test(id || '') || !/^[0-9a-f]{64}$/i.test(secret || '')) throw new Error('올바른 조회 코드를 입력해 주세요.');
+  return {id, secret};
+}
+function showReportState(data) {
+  if (!data) { document.querySelector('#report-state').textContent = '해당 조회 코드를 확인하지 못했습니다.'; return; }
+  const status = PDReports.labels[data.status] || '상태 확인 필요';
+  const correction = PDReports.correctionLabels[data.correction_status] || '정정 상태 확인 필요';
+  document.querySelector('#report-state').textContent = `${status} · ${correction} · 마지막 변경 ${new Date(data.updated_at).toLocaleString('ko-KR')}. 이 상태는 피싱 여부의 자동 판정이 아닙니다.`;
+}
+async function refreshReport() {
+  const box = document.querySelector('#report-state'); box.textContent = '서버에서 처리 상태를 확인하고 있습니다…';
+  try { const data = await PDReports.status(parseReceipt()); showReportState(data); }
+  catch(error) { box.textContent = error.message; }
+}
+document.querySelector('#refresh-report').addEventListener('click', refreshReport);
+document.querySelector('#copy-report-code').addEventListener('click', async () => {
+  try { parseReceipt(); await navigator.clipboard.writeText(reportCode.value.trim()); document.querySelector('#report-status').textContent = '조회 코드를 복사했습니다. 비밀값이 포함돼 있으니 다른 사람에게 보내지 마세요.'; }
+  catch(error) { document.querySelector('#report-status').textContent = error.message; }
+});
+document.querySelector('#phone-report').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget, values = new FormData(form), button = document.querySelector('#submit-report'), status = document.querySelector('#report-status');
+  button.disabled = true; status.textContent = '제보를 접수하고 있습니다…';
+  try {
+    const receipt = await PDReports.create(values.get('phone'),values.get('kind'),values.get('text'));
+    reportCode.value = `${receipt.id}.${receipt.secret}`;
+    localStorage.setItem(receiptKey,reportCode.value);
+    status.textContent = '제보가 접수됐습니다. 아직 사실 확인 전입니다. 조회 코드를 안전하게 보관하세요.';
+    form.reset(); await refreshReport();
+  } catch(error) { status.textContent = error.message; }
+  finally { button.disabled = false; }
+});
+document.querySelector('#correct-report').addEventListener('submit', async event => {
+  event.preventDefault();
+  const box = document.querySelector('#correction-status'); box.textContent = '정정 요청을 접수하고 있습니다…';
+  try {
+    const data = await PDReports.correct(parseReceipt(),document.querySelector('#correction-reason').value);
+    box.textContent = '정정 요청이 접수됐습니다. 운영자 검토 전이며 기존 제보는 즉시 확정·삭제되지 않습니다.';
+    showReportState(data); document.querySelector('#correction-reason').value = '';
+  } catch(error) { box.textContent = error.message; }
+});
+PDReports.rpc('pd_report_health').then(() => {
+  document.querySelector('#report-availability').textContent = '신고 서버가 연결됐습니다. 접수·조회·정정 요청을 이용할 수 있습니다.';
+  document.querySelector('#submit-report').disabled = false;
+  if (reportCode.value) refreshReport();
+}).catch(() => {
+  document.querySelector('#report-availability').textContent = '신고 서버의 3차 기능이 아직 적용되지 않아 접수·조회·정정 요청을 사용할 수 없습니다. 긴급 피해는 112, 스미싱 상담은 118을 이용하세요.';
 });
 
 // OCR is loaded only on demand. Runtime, worker, WASM and traineddata are same-origin.
