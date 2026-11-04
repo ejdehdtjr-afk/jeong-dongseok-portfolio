@@ -1,0 +1,14 @@
+{
+  "name": "pd-premium-checkpoint-1",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "vendor:ocr": "node scripts/vendor-ocr.cjs",
+    "preview": "node scripts/preview.cjs"
+  },
+  "devDependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
+    "@tesseract.js-data/kor": "1.0.0",
+    "tesseract.js": "6.0.1"
+  }
+}

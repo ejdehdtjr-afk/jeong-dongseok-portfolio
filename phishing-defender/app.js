@@ -47,8 +47,7 @@ function selectSample(sampleName) {
     if (radio) radio.checked = true;
     if (!preset[index]) document.querySelectorAll(`input[name="${check.id}"]`).forEach((item) => { item.checked = false; });
   });
-  result.hidden = true;
-  document.querySelector("#analysis-summary").hidden = true;
+  invalidateAnalysis(false);
 }
 
 function setChoice(id, value) {
@@ -67,14 +66,13 @@ function autoCheckMessage() {
   }
 
   error.hidden = true;
-  const lower = message.toLowerCase();
-  const urls = message.match(/https?:\/\/[^\s)>\]}]+/gi) || [];
+  const analysis = PDAnalysis.analyze(message);
+  renderEvidence(message, analysis);
+  const urls = analysis.links;
   const findings = [];
-  const urgencyWords = ["오늘 안", "즉시", "지금", "긴급", "마감", "정지", "보류", "마지막 경고", "within 24", "urgent", "immediately"];
-  const requestWords = ["비밀번호", "인증번호", "인증 코드", "카드 정보", "계좌", "송금", "결제", "주민등록", "password", "verification code", "wire transfer"];
-  const suspiciousLink = urls.some((url) => /^http:\/\//i.test(url) || /\d{1,3}(?:\.\d{1,3}){3}/.test(url) || /(bit\.ly|tinyurl|goo\.gl)/i.test(url));
-  const hasUrgency = urgencyWords.some((word) => lower.includes(word));
-  const hasRequest = requestWords.some((word) => lower.includes(word));
+  const suspiciousLink = urls.some((link) => !link.valid || link.reasons.length);
+  const hasUrgency = analysis.hasUrgency;
+  const hasRequest = analysis.hasRequest;
   const sender = message.match(/(?:from|발신자|보낸\s*사람)\s*[:：]?\s*[^\n<]*<?([\w.+-]+@[\w.-]+\.[a-z]{2,})>?/i)?.[1];
 
   if (sender) {
@@ -86,27 +84,28 @@ function autoCheckMessage() {
   }
   if (urls.length) {
     setChoice("link", suspiciousLink ? "risk" : "review");
-    findings.push(suspiciousLink ? "일반적이지 않거나 보안 연결이 아닌 링크 형식을 찾았습니다." : "링크를 찾았습니다. 메시지의 이름이 아니라 실제 도메인이 공식 주소와 같은지 확인하세요.");
+    findings.push(suspiciousLink ? "직접 확인이 필요한 링크 형식을 찾았습니다. 확인 근거 영역의 호스트별 이유를 확인하세요." : "링크를 찾았습니다. 메시지의 이름이 아니라 실제 도메인이 공식 주소와 같은지 확인하세요.");
   } else {
     setChoice("link", "review");
     findings.push("링크를 찾지 못했습니다. 버튼·이미지 링크가 있는 원본 메시지라면 직접 확인하세요.");
   }
   if (hasRequest) {
     setChoice("request", "risk");
-    findings.push("개인정보·인증·금전 관련 요청 표현을 찾았습니다.");
+    findings.push("개인정보·인증·금전 관련 표현을 찾았습니다. 금지·예방 안내인지 실제 요청인지 원문을 확인하세요.");
   } else {
-    setChoice("request", "safe");
+    setChoice("request", "review");
   }
   if (hasUrgency) {
     setChoice("pressure", "risk");
     findings.push("서두르게 만드는 압박 표현을 찾았습니다.");
   } else {
-    setChoice("pressure", "safe");
+    setChoice("pressure", "review");
   }
   setChoice("context", "review");
   findings.push("평소 관계와 상황에 맞는 요청인지는 자동으로 알 수 없어 직접 확인이 필요합니다.");
   automaticFindings = findings;
   showResult();
+  document.querySelector('#evidence-panel').scrollIntoView({behavior: 'instant', block: 'start'});
 }
 
 function escapeHtml(value) {
@@ -149,11 +148,28 @@ function showResult() {
   result.focus();
 }
 
+function invalidateAnalysis(clearChoices) {
+  automaticFindings = [];
+  result.hidden = true;
+  document.querySelector("#analysis-summary").hidden = true;
+  document.querySelector("#evidence-panel").hidden = true;
+  document.querySelector("#form-error").hidden = true;
+  if (clearChoices) document.querySelectorAll(".choices input").forEach((item) => { item.checked = false; });
+}
+
+function renderEvidence(message, analysis) {
+  document.querySelector("#highlighted-message").innerHTML = PDAnalysis.highlight(message, analysis.spans);
+  document.querySelector("#link-evidence").innerHTML = analysis.links.length
+    ? analysis.links.map((link) => `<article class="link-card"><p>원문 주소 (열리지 않는 텍스트)</p><p>${escapeHtml(link.raw)}</p><strong>실제 호스트</strong><code>${escapeHtml(link.host || '해석하지 못함')}</code><ul>${(link.reasons.length ? link.reasons : ['형식만으로 위험 신호를 찾지 못했습니다. 공식 주소와 직접 비교해야 합니다.']).map((reason) => `<li>${escapeHtml(reason)}</li>`).join('')}</ul></article>`).join('')
+    : '<p>텍스트에서 HTTP·HTTPS·www 링크를 찾지 못했습니다. 링크가 없다고 안전한 것은 아닙니다. 원본의 버튼·이미지·QR 링크도 직접 확인하세요.</p>';
+  document.querySelector("#evidence-panel").hidden = false;
+}
+
 renderChecklist();
 selectSample("phishing");
 document.querySelectorAll(".sample").forEach((button) => button.addEventListener("click", () => selectSample(button.dataset.sample)));
 input.addEventListener("input", () => document.querySelectorAll(".sample").forEach((button) => button.classList.remove("selected")));
-input.addEventListener("input", () => { automaticFindings = []; });
+input.addEventListener("input", () => invalidateAnalysis(true));
 document.querySelector("#auto-check-button").addEventListener("click", autoCheckMessage);
 document.querySelector("#result-button").addEventListener("click", showResult);
 
@@ -162,7 +178,157 @@ reportSection.className = "research-note";
 reportSection.innerHTML = `<p class="eyebrow">전화 신고·글 신고</p><h2>의심 전화번호를 안전하게 접수하세요</h2><p>개인 이름·주소는 쓰지 마세요. 의심 신고가 같은 번호에 5건 쌓이면 ‘신고 필요’로 자동 분류됩니다.</p><p><a href="tel:112">긴급 피해·범죄 112로 전화</a> · <a href="tel:118">불법스팸 118로 전화</a></p><form id="phone-report"><label>전화번호<input required name="phone" placeholder="010-1234-5678"></label><label>분류<select name="kind"><option value="suspicious">의심 전화번호</option><option value="dangerous">위험 전화번호</option></select></label><label>신고 글<textarea required name="text" minlength="10" maxlength="500" placeholder="통화 내용과 의심 이유를 10~500자로 적어 주세요."></textarea></label><button class="result-button">신고 글 저장</button><p id="report-status" class="hint" aria-live="polite"></p></form>`;
 document.querySelector(".safe-actions").before(reportSection);
 document.querySelector("#phone-report").addEventListener("submit", async (event) => {
-  event.preventDefault(); const form = new FormData(event.currentTarget); const status = document.querySelector("#report-status");
+  event.preventDefault(); const reportForm = event.currentTarget; const form = new FormData(reportForm); const status = document.querySelector("#report-status");
   status.textContent = "저장 중…";
-  try { const response = await fetch("https://rzzrwjfwrioocysqapbl.supabase.co/rest/v1/rpc/submit_phone_report", {method:"POST",headers:{"Content-Type":"application/json","apikey":"sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze","Authorization":"Bearer sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze"},body:JSON.stringify({p_phone:form.get("phone"),p_kind:form.get("kind"),p_text:form.get("text")})}); const data=await response.json(); if(!response.ok) throw new Error(data.message||"저장 실패"); status.textContent=`저장됨: ${data.status === "reported" ? "신고 필요 전화번호" : data.status === "dangerous" ? "위험 전화번호" : "의심 전화번호"}로 분류되었습니다.`; event.currentTarget.reset(); } catch(error) { status.textContent=`저장하지 못했습니다: ${error.message}`; }
+  try { const response = await fetch("https://rzzrwjfwrioocysqapbl.supabase.co/rest/v1/rpc/submit_phone_report", {method:"POST",headers:{"Content-Type":"application/json","apikey":"sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze","Authorization":"Bearer sb_publishable_ULhVYVm2tZjlJGrUFauFPA_Mycpz9Ze"},body:JSON.stringify({p_phone:form.get("phone"),p_kind:form.get("kind"),p_text:form.get("text")})}); const data=await response.json(); if(!response.ok) throw new Error(data.message||"저장 실패"); status.textContent=`저장됨: ${data.status === "reported" ? "신고 필요 전화번호" : data.status === "dangerous" ? "위험 전화번호" : "의심 전화번호"}로 분류되었습니다.`; reportForm.reset(); } catch(error) { status.textContent=`저장하지 못했습니다: ${error.message}`; }
 });
+
+// OCR is loaded only on demand. Runtime, worker, WASM and traineddata are same-origin.
+const imageInput = document.querySelector('#screenshot-input');
+const imagePreview = document.querySelector('#image-preview');
+const ocrButton = document.querySelector('#ocr-button');
+const ocrStatus = document.querySelector('#ocr-status');
+const ocrProgress = document.querySelector('#ocr-progress');
+let imageURL = null;
+let imageFile = null;
+let activeWorker = null;
+let generation = 0;
+let ocrBusy = false;
+let scriptPromise = null;
+
+function lockMessageDuringOCR(locked) {
+  input.disabled = locked;
+  document.querySelectorAll('.sample[data-sample], #clear-message, #auto-check-button').forEach((button) => { button.disabled = locked; });
+}
+
+async function clearImage(statusText = '이미지를 삭제했습니다. 인식 중이었다면 취소됩니다.') {
+  generation += 1;
+  const worker = activeWorker;
+  activeWorker = null;
+  if (worker) await worker.terminate().catch(() => {});
+  if (imageURL) URL.revokeObjectURL(imageURL);
+  imageURL = null;
+  imageFile = null;
+  imageInput.value = '';
+  imagePreview.removeAttribute('src');
+  document.querySelector('#image-preview-box').hidden = true;
+  ocrBusy = false;
+  lockMessageDuringOCR(false);
+  ocrButton.disabled = true;
+  imageInput.disabled = false;
+  ocrProgress.hidden = true;
+  ocrStatus.textContent = statusText;
+}
+
+imageInput.addEventListener('change', async () => {
+  const file = imageInput.files[0];
+  await clearImage('이미지를 확인하고 있습니다.');
+  if (!file) { ocrStatus.textContent = '선택한 이미지가 없습니다.'; return; }
+  const token = generation;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+    ocrStatus.textContent = 'PNG·JPEG·WebP 이미지를 10MB 이하로 선택해 주세요.'; return;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const pixels = bitmap.width * bitmap.height;
+    bitmap.close();
+    if (token !== generation) return;
+    if (pixels > 20000000) { ocrStatus.textContent = '이미지가 너무 큽니다. 2천만 화소 이하로 줄여 주세요.'; return; }
+    imageFile = file;
+    imageURL = URL.createObjectURL(file);
+    imagePreview.src = imageURL;
+    document.querySelector('#image-preview-box').hidden = false;
+    ocrButton.disabled = false;
+    ocrStatus.textContent = '이미지가 준비됐습니다. 글자를 가져오면 현재 메시지 내용이 교체됩니다.';
+  } catch { if (token === generation) ocrStatus.textContent = '이미지를 읽지 못했습니다. 손상되지 않은 PNG·JPEG·WebP로 다시 선택해 주세요.'; }
+});
+
+function loadOCR() {
+  if (window.Tesseract) return Promise.resolve();
+  if (!scriptPromise) scriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'vendor/tesseract.min.js';
+    script.onload = resolve;
+    script.onerror = () => { script.remove(); scriptPromise = null; reject(new Error('인식 도구를 내려받지 못했습니다.')); };
+    document.head.append(script);
+  });
+  return scriptPromise;
+}
+
+ocrButton.addEventListener('click', async () => {
+  if (!imageFile || ocrBusy) return;
+  const token = ++generation;
+  const file = imageFile;
+  ocrBusy = true;
+  lockMessageDuringOCR(true);
+  ocrButton.disabled = true;
+  imageInput.disabled = true;
+  ocrProgress.hidden = false;
+  ocrProgress.value = 0;
+  ocrStatus.textContent = '한국어·영어 인식 도구를 준비하고 있습니다. 첫 실행은 시간이 걸립니다.';
+  let worker = null;
+  let timer;
+  try {
+    await Promise.race([
+      (async () => {
+        await loadOCR();
+        if (token !== generation) return;
+        worker = await Tesseract.createWorker(['kor', 'eng'], 1, {
+          workerPath: new URL('vendor/worker.min.js', location.href).href,
+          corePath: new URL('vendor/core/', location.href).href,
+          langPath: new URL('vendor/lang/', location.href).href.replace(/\/$/, ''),
+          logger: (event) => {
+            if (token !== generation) return;
+            if (event.status === 'recognizing text') {
+              ocrProgress.value = event.progress;
+              ocrStatus.textContent = `글자를 읽고 있습니다… ${Math.round(event.progress * 100)}%`;
+            }
+          }
+        });
+        if (token !== generation) { await worker.terminate(); return; }
+        activeWorker = worker;
+        const {data} = await worker.recognize(file);
+        if (token !== generation) return;
+        const text = data.text.trim();
+        if (!text) { ocrStatus.textContent = '읽을 수 있는 글자를 찾지 못했습니다. 더 선명한 이미지나 직접 입력을 이용하세요.'; return; }
+        input.value = text.slice(0, 20000);
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        ocrStatus.textContent = text.length > 20000 ? '20,000자까지만 가져왔습니다. 원본과 비교해 수정한 후 자동 확인을 누르세요.' : '글자를 가져왔습니다. 원본과 비교해 수정한 후 메시지 자동 확인을 누르세요.';
+        lockMessageDuringOCR(false);
+        input.focus();
+      })(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('인식 제한 시간')), 120000); })
+    ]);
+  } catch {
+    if (token === generation) {
+      generation += 1;
+      ocrStatus.textContent = '글자를 가져오지 못했습니다. 연결·이미지 상태를 확인한 뒤 다시 시도하거나 직접 입력하세요.';
+    }
+  } finally {
+    clearTimeout(timer);
+    if (worker) await worker.terminate().catch(() => {});
+    if (activeWorker === worker) activeWorker = null;
+    // A cancelled old job must not change the controls of a newly started job.
+    if (token === generation || (!activeWorker && !ocrBusy)) {
+      ocrBusy = false;
+      lockMessageDuringOCR(false);
+      ocrButton.disabled = !imageFile;
+      imageInput.disabled = false;
+      ocrProgress.hidden = true;
+    } else if (generation === token + 1 && ocrBusy && activeWorker === null) {
+      ocrBusy = false;
+      lockMessageDuringOCR(false);
+      ocrButton.disabled = !imageFile;
+      imageInput.disabled = false;
+      ocrProgress.hidden = true;
+    }
+  }
+});
+
+document.querySelector('#clear-image').addEventListener('click', () => clearImage());
+document.querySelector('#clear-message').addEventListener('click', () => {
+  input.value = '';
+  input.dispatchEvent(new Event('input', {bubbles:true}));
+  input.focus();
+});
+window.addEventListener('pagehide', () => { if (imageURL) URL.revokeObjectURL(imageURL); if (activeWorker) activeWorker.terminate(); });
