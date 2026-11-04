@@ -36,7 +36,13 @@ Windows Codex 내장 Chromium 브라우저의 로컬 미리보기에서 확인�
 
 ## 공개 배포
 
-기존 GitHub Pages main 브랜치 배포를 사용한다. 공개 URL의 배포 성공·실제 동작 결과는 배포 완료 후 이 문서에 추가한다.
+- 기존 GitHub Pages main 브랜치 배포를 유지했다.
+- 기능 구현 commit: `ee99204fa48ee7dbf479c70cfd5aaf089701286b`.
+- 배포 실행: https://github.com/ejdehdtjr-afk/jeong-dongseok-portfolio/actions/runs/41829478269 — 성공.
+- 공개 결과물: https://ejdehdtjr-afk.github.io/jeong-dongseok-portfolio/phishing-defender/
+- 공개 주소에서도 가상 이미지를 선택해 한국어·영문 URL 추출 성공을 확인했다. 자동 확인 후 ‘오늘 안’·‘카드 정보’·링크 강조와 `delivery-check.example` 호스트, HTTP 확인 이유가 표시됐다.
+- 이 공개 확인에서 브라우저 오류 로그는 없었다.
+- evidence/01-ocr.jpg와 evidence/02-evidence.jpg는 공개 배포 결과, evidence/03-mobile.jpg는 로컬 미리보기에서 모바일 viewport 검증 결과다.
 
 ## 검증의 한계
 
