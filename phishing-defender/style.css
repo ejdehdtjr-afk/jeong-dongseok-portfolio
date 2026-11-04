@@ -36,3 +36,24 @@ mark { padding:2px 1px; border-radius:3px; }
 .link-card ul { padding-left:20px; margin-bottom:0; }
 #clear-message { margin-bottom:10px; }
 footer a { color:var(--green); }
+.context-question { border:1px solid var(--line); border-radius:10px; padding:16px; margin:18px 0; }
+.context-question legend { padding:0 6px; font-weight:700; }
+.context-answers { display:flex; flex-wrap:wrap; gap:14px; }
+.context-answers label { font-weight:400; }
+.context-answers input { accent-color:var(--green); }
+#message-type, #case-filter { display:block; width:100%; padding:12px; margin:10px 0 18px; border:1px solid var(--line); border-radius:8px; background:white; font:inherit; color:var(--ink); }
+#context-result { margin:20px 0; }
+#official-routes { display:grid; gap:12px; }
+.route-card, .case-card { border:1px solid var(--line); border-radius:12px; padding:18px; background:var(--card); overflow-wrap:anywhere; margin:12px 0; }
+.route-card h4 { margin:0 0 6px; }
+.route-card p:last-child { margin-bottom:0; }
+a { color:#65401d; text-underline-offset:3px; }
+.route-card code { font-size:.9rem; }
+.signal-notice, .signal-legend span:nth-child(4) { background:#d9ecdc; color:#1d5136; }
+.table-scroll { overflow-x:auto; }
+.comparison-table { width:100%; border-collapse:collapse; text-align:left; margin:18px 0; background:var(--card); }
+.comparison-table th,.comparison-table td { padding:12px; border:1px solid var(--line); }
+.comparison-table caption { text-align:left; font-size:.9rem; margin-bottom:10px; color:var(--muted); }
+.case-message { white-space:pre-wrap; overflow-wrap:anywhere; }
+.case-card .eyebrow { margin-top:0; }
+@media(max-width:650px) { .context-answers { flex-direction:column; gap:12px; } }

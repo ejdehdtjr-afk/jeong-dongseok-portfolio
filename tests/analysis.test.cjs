@@ -41,8 +41,11 @@ test('빈 입력·신호 없는 문장·해석 불가능 주소도 예외 없이
   assert.deepEqual(analyze('금요일 모임입니다.').spans, []);
   assert.equal(inspectLink('http://[').valid, false);
 });
-test('예방 안내 문구도 단순 규칙 한계로 검출되며 확정 판정 값은 없음', () => {
+test('1차의 예방 문구 오탐을 2차에서 구분하되 안전 판정은 하지 않음', () => {
   const result = analyze('인증번호를 절대 알려주지 마세요.');
-  assert.equal(result.hasRequest, true);
+  assert.equal(require('../phishing-defender/analysis-v1.js').analyze('인증번호를 절대 알려주지 마세요.').hasRequest, true);
+  assert.equal(result.hasRequest, false);
+  assert.equal(result.signalLevel, 'review');
+  assert.ok(result.suppressed.includes('인증번호'));
   assert.equal(result.verdict, undefined);
 });

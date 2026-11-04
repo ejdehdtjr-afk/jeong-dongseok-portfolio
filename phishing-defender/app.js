@@ -1,6 +1,8 @@
 const samples = {
   phishing: `[배송 안내] 주소 오류로 배송이 보류되었습니다. 오늘 안에 아래 링크에서 주소와 카드 정보를 다시 입력하지 않으면 반송됩니다.\nhttp://fast-delivery-check.example/confirm`,
   normal: `[동아리 일정 안내] 이번 주 모임은 금요일 오후 6시, 평소 사용하던 학교 세미나실에서 진행합니다. 일정은 동아리 공지 게시판에서도 확인할 수 있습니다.`,
+  prevention: '보안 안내: 인증번호를 절대 알려주지 마세요. 비밀번호를 다른 사람에게 보내지 마세요.',
+  family: '엄마 나 휴대폰 고장 나서 새 번호야. 통화는 안 돼. 지금 상품권을 구매해서 보내줘.',
   blank: ""
 };
 
@@ -22,6 +24,8 @@ const checklist = document.querySelector("#checklist");
 const input = document.querySelector("#message-input");
 const result = document.querySelector("#result");
 let automaticFindings = [];
+let latestAnalysis = null;
+let latestContextAssessment = null;
 
 function renderChecklist() {
   checklist.innerHTML = checks.map((check) => `
@@ -36,7 +40,7 @@ function renderChecklist() {
 
 function selectSample(sampleName) {
   input.value = samples[sampleName];
-  document.querySelectorAll(".sample").forEach((button) => button.classList.toggle("selected", button.dataset.sample === sampleName));
+  document.querySelectorAll(".sample[data-sample]").forEach((button) => button.classList.toggle("selected", button.dataset.sample === sampleName));
   const preset = sampleName === "phishing"
     ? ["review", "risk", "risk", "risk", "review"]
     : sampleName === "normal"
@@ -67,7 +71,10 @@ function autoCheckMessage() {
 
   error.hidden = true;
   const analysis = PDAnalysis.analyze(message);
+  latestAnalysis = analysis;
+  latestContextAssessment = null;
   renderEvidence(message, analysis);
+  renderContext(PDContext.suggestType(message));
   const urls = analysis.links;
   const findings = [];
   const suspiciousLink = urls.some((link) => !link.valid || link.reasons.length);
@@ -89,20 +96,23 @@ function autoCheckMessage() {
     setChoice("link", "review");
     findings.push("링크를 찾지 못했습니다. 버튼·이미지 링크가 있는 원본 메시지라면 직접 확인하세요.");
   }
-  if (hasRequest) {
+  if (analysis.requestAction) {
     setChoice("request", "risk");
-    findings.push("개인정보·인증·금전 관련 표현을 찾았습니다. 금지·예방 안내인지 실제 요청인지 원문을 확인하세요.");
+    findings.push("민감 정보·금전·설치 표현과 행동 요구가 함께 나타납니다. 원문과 상황을 확인하세요.");
   } else {
     setChoice("request", "review");
   }
-  if (hasUrgency) {
+  if (hasUrgency && analysis.signalLevel === "risk") {
     setChoice("pressure", "risk");
     findings.push("서두르게 만드는 압박 표현을 찾았습니다.");
   } else {
     setChoice("pressure", "review");
   }
+  if (analysis.suppressed.length) findings.push(`예방·완료 안내로 읽히는 표현 ${analysis.suppressed.length}개를 구분했습니다. 일부 정해진 문형만 처리하며 안전 보장은 아닙니다.`);
+  if (hasRequest && !analysis.requestAction) findings.push('민감 정보 관련 단어는 있지만 행동 요구를 확인하지 못했습니다. 직접 맥락을 살펴보세요.');
+  if (hasUrgency && analysis.signalLevel !== 'risk') findings.push('긴급·마감 표현만으로 위험 판정하지 않습니다. 요청 내용과 상황을 함께 확인하세요.');
   setChoice("context", "review");
-  findings.push("평소 관계와 상황에 맞는 요청인지는 자동으로 알 수 없어 직접 확인이 필요합니다.");
+  findings.push("아래 추가 질문에 답하면 상황 점검을 보완할 수 있습니다. 유형 제안은 키워드 기반이며 직접 바꿀 수 있습니다.");
   automaticFindings = findings;
   showResult();
   document.querySelector('#evidence-panel').scrollIntoView({behavior: 'instant', block: 'start'});
@@ -128,7 +138,7 @@ function showResult() {
   const title = document.querySelector("#result-title");
   const guidance = document.querySelector("#result-guidance");
   const summary = document.querySelector("#analysis-summary");
-  if (counts.risk > 0) {
+  if (counts.risk > 0 || latestAnalysis?.signalLevel === 'risk' || latestContextAssessment?.level === 'risk') {
     title.textContent = "위험 신호가 확인되었습니다";
     guidance.innerHTML = `<strong>지금은 누르거나 보내지 마세요.</strong><p>메시지 안의 링크·전화번호를 사용하지 말고, 해당 기관의 공식 앱·웹사이트 또는 이미 알고 있는 연락처로 직접 확인하세요.</p>`;
   } else if (counts.review > 0) {
@@ -138,8 +148,13 @@ function showResult() {
     title.textContent = "현재 선택에서는 위험 신호가 적습니다";
     guidance.innerHTML = `<strong>그래도 민감한 정보 요청은 다시 확인하세요.</strong><p>안전으로 보이는 메시지도 발신자 위조가 가능하므로, 비밀번호·인증번호·송금 요청은 공식 경로에서 한 번 더 확인하세요.</p>`;
   }
-  if (automaticFindings.length) {
-    summary.innerHTML = `<h3>자동 확인에서 찾은 신호</h3><ul>${automaticFindings.map((finding) => `<li>${finding}</li>`).join("")}</ul>`;
+  const displayedFindings = [...automaticFindings];
+  if (latestContextAssessment) {
+    displayedFindings.push(...latestContextAssessment.reasons.map(reason => `상황 답변: ${escapeHtml(reason)}`));
+    displayedFindings.push('추가 질문의 답변을 반영했습니다. 유리한 답변으로 기존 위험 신호를 지우지 않습니다.');
+  } else if (latestAnalysis) displayedFindings.push('추가 질문 답변은 아직 반영하지 않았습니다.');
+  if (displayedFindings.length) {
+    summary.innerHTML = `<h3>자동 확인에서 찾은 신호</h3><ul>${displayedFindings.map((finding) => `<li>${finding}</li>`).join("")}</ul>`;
     summary.hidden = false;
   } else {
     summary.hidden = true;
@@ -150,6 +165,10 @@ function showResult() {
 
 function invalidateAnalysis(clearChoices) {
   automaticFindings = [];
+  latestAnalysis = null;
+  latestContextAssessment = null;
+  document.querySelector('#context-panel').hidden = true;
+  document.querySelector('#context-result').hidden = true;
   result.hidden = true;
   document.querySelector("#analysis-summary").hidden = true;
   document.querySelector("#evidence-panel").hidden = true;
@@ -165,10 +184,55 @@ function renderEvidence(message, analysis) {
   document.querySelector("#evidence-panel").hidden = false;
 }
 
+function renderContext(type) {
+  const config = PDContext.types[type] || PDContext.types.other;
+  document.querySelector('#message-type').value = type;
+  document.querySelector('#context-description').textContent = config.instruction;
+  document.querySelector('#context-questions').innerHTML = config.questions.map(q => `<fieldset class="context-question"><legend>${escapeHtml(q.text)}</legend><div class="context-answers">${[['yes','예'],['no','아니요'],['unknown','잘 모르겠어요']].map(([value,label]) => `<label><input type="radio" name="ctx-${q.id}" value="${value}"> ${label}</label>`).join('')}</div></fieldset>`).join('');
+  document.querySelector('#context-result').hidden = true;
+  document.querySelector('#context-error').hidden = true;
+  document.querySelector('#official-routes').innerHTML = config.routes.map(key => {
+    const route = PDContext.routes[key];
+    return `<article class="route-card"><h4><a href="${route.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(route.title)} ↗</a></h4><code>${escapeHtml(new URL(route.url).hostname)}</code><p>${escapeHtml(route.description)}</p></article>`;
+  }).join('');
+  document.querySelector('#route-date').textContent = `공식 출처 확인일: ${PDContext.checkedAt}. 메시지에서 가져온 주소가 아닌 사전에 확인한 경로입니다. 서비스 화면은 이후 달라질 수 있습니다.`;
+  document.querySelector('#context-panel').hidden = false;
+}
+function clearContextResult() {
+  latestContextAssessment = null;
+  document.querySelector('#context-result').hidden = true;
+  if (latestAnalysis) {setChoice('context','review'); result.hidden = true;}
+}
+document.querySelector('#context-questions').addEventListener('change', clearContextResult);
+document.querySelector('#message-type').addEventListener('change', event => {
+  clearContextResult();
+  renderContext(event.target.value);
+});
+document.querySelector('#apply-context').addEventListener('click', () => {
+  if (!latestAnalysis) return;
+  const type = document.querySelector('#message-type').value;
+  const answers = {};
+  for (const q of PDContext.types[type].questions) answers[q.id] = document.querySelector(`input[name="ctx-${q.id}"]:checked`)?.value;
+  const assessment = PDContext.assess(type,answers,latestAnalysis);
+  if (!assessment.complete) {
+    document.querySelector('#context-error').textContent = '질문 세 개에 모두 답해 주세요. 확실하지 않으면 잘 모르겠어요를 선택하세요.';
+    document.querySelector('#context-error').hidden = false;
+    return;
+  }
+  latestContextAssessment = assessment;
+  document.querySelector('#context-error').hidden = true;
+  setChoice('context', assessment.reasons.length ? 'risk' : 'review');
+  const box = document.querySelector('#context-result');
+  box.innerHTML = `<strong>${assessment.level === 'risk' ? '주의 신호가 남아 있습니다' : '독립적인 확인을 계속 진행하세요'}</strong><p>${assessment.unknown ? `잘 모르겠다고 답한 항목 ${assessment.unknown}개는 확인이 필요합니다.` : '답변을 반영했지만 메시지의 진위를 확정하지 않습니다.'}</p><ul>${assessment.reasons.map(reason=>`<li>${escapeHtml(reason)}</li>`).join('')}</ul><p>${escapeHtml(assessment.note)}</p>`;
+  box.hidden = false;
+  showResult();
+  box.scrollIntoView({behavior:'instant',block:'start'});
+});
+
 renderChecklist();
 selectSample("phishing");
-document.querySelectorAll(".sample").forEach((button) => button.addEventListener("click", () => selectSample(button.dataset.sample)));
-input.addEventListener("input", () => document.querySelectorAll(".sample").forEach((button) => button.classList.remove("selected")));
+document.querySelectorAll(".sample[data-sample]").forEach((button) => button.addEventListener("click", () => selectSample(button.dataset.sample)));
+input.addEventListener("input", () => document.querySelectorAll(".sample[data-sample]").forEach((button) => button.classList.remove("selected")));
 input.addEventListener("input", () => invalidateAnalysis(true));
 document.querySelector("#auto-check-button").addEventListener("click", autoCheckMessage);
 document.querySelector("#result-button").addEventListener("click", showResult);
@@ -332,3 +396,10 @@ document.querySelector('#clear-message').addEventListener('click', () => {
   input.focus();
 });
 window.addEventListener('pagehide', () => { if (imageURL) URL.revokeObjectURL(imageURL); if (activeWorker) activeWorker.terminate(); });
+
+const exampleId = new URLSearchParams(location.search).get('example');
+const selectedExample = PDScenarios.find(item => item.id === exampleId);
+if (selectedExample) {
+  input.value = selectedExample.text;
+  input.dispatchEvent(new Event('input', {bubbles:true}));
+}

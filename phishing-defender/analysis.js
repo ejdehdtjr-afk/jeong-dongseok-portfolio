@@ -4,7 +4,7 @@
   else root.PDAnalysis = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const urgency = ['오늘 안', '즉시', '지금', '긴급', '마감', '정지', '보류', '마지막 경고', 'within 24', 'urgent', 'immediately'];
-  const requests = ['비밀번호', '인증번호', '인증 코드', '카드 정보', '계좌', '송금', '결제', '주민등록', 'password', 'verification code', 'wire transfer'];
+  const requests = ['비밀번호', '인증번호', '인증 코드', '카드 정보', '계좌', '송금', '결제', '주민등록', 'password', 'verification code', 'wire transfer', '상품권', '안전계좌', '원격제어', '원격 제어', '앱 설치', '신분증', '이체', '입금'];
   const shorteners = new Set(['bit.ly', 'tinyurl.com', 'goo.gl', 't.co']);
   const escapeHtml = (text) => text.replace(/[&<>"']/g, (c) => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   function inspectLink(raw) {
@@ -29,12 +29,36 @@
       spans.push({start: match.index, end: match.index + raw.length, kind: 'link', label: '링크: 실제 호스트를 확인하세요'});
     }
     const lower = message.toLowerCase();
+    const suppressed = [];
+    const actionPattern = /입력|보내|전달|알려|제공|송금|이체|입금|결제|구매|구입|설치|share|send|enter|provide|transfer/i;
+    function sentenceAt(start) {
+      const before = message.slice(0, start);
+      const begin = Math.max(before.lastIndexOf('\n'), before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?')) + 1;
+      const rest = message.slice(start);
+      const stop = rest.search(/[\n.!?。]/);
+      return message.slice(begin, stop === -1 ? message.length : start + stop);
+    }
+    function preventionAt(start, length) {
+      const after = message.slice(start + length).split(/[\n.!?。]/)[0];
+      // A later warning about another secret must not cancel the current request.
+      const nextTerm = requests.map(word => after.toLowerCase().indexOf(word)).filter(index => index >= 0);
+      const localAfter = nextTerm.length ? after.slice(0, Math.min(...nextTerm)) : after;
+      const warning = /^(?!.{0,60}않으면).{0,45}(?:(?:알려\s*주|보내|공유하|제공하|입력하|전달하|요구하|요청하|송금하|결제하)지\s*(?:마(?:세요|십시오)?|않(?:습니다|아요|는다)|말(?:아|고))|(?:입력|공유|제공|전달|송금|결제)\s*금지)/.test(localAfter);
+      const englishWarning = /(?:never|do not|don't)\s+(?:share|send|provide|enter)\s+(?:(?:your|the)\s+)?$/i.test(message.slice(Math.max(0, start - 90), start));
+      const receipt = /^(?:가|이|를|\s)*완료(?:되었|됐|했습니다)/.test(after);
+      return warning || englishWarning || receipt;
+    }
     for (const [kind, words] of [['request', requests], ['pressure', urgency]]) {
       for (const word of words) {
         let start = lower.indexOf(word);
         while (start !== -1) {
-          // 1차는 신호 추출만 수행한다. 문맥·부정문 의미 판별은 후속 검증 범위다.
-          spans.push({start, end: start + word.length, kind, label: kind === 'request' ? '민감 정보·금전 관련 표현 (요청인지 직접 확인)' : '긴급·압박 관련 표현 (맥락 확인 필요)'});
+          const insideLink = spans.some((span) => span.kind === 'link' && start >= span.start && start < span.end);
+          if (!insideLink) {
+            const isPrevention = kind === 'request' && preventionAt(start, word.length);
+            const signal = {start, end: start + word.length, kind: isPrevention ? 'notice' : kind, label: isPrevention ? '예방·완료 안내로 읽히는 표현 (안전 보장은 아님)' : kind === 'request' ? '민감 정보·금전 관련 표현 (요청인지 직접 확인)' : '긴급·압박 관련 표현 (맥락 확인 필요)'};
+            spans.push(signal);
+            if (isPrevention) suppressed.push(word);
+          }
           start = lower.indexOf(word, start + word.length);
         }
       }
@@ -43,7 +67,15 @@
     const nonOverlapping = [];
     let end = 0;
     for (const span of spans) if (span.start >= end) { nonOverlapping.push(span); end = span.end; }
-    return {links, spans: nonOverlapping, hasRequest: spans.some((s) => s.kind === 'request'), hasUrgency: spans.some((s) => s.kind === 'pressure')};
+    const hasRequest = spans.some((s) => s.kind === 'request');
+    const hasUrgency = spans.some((s) => s.kind === 'pressure');
+    const requestAction = spans.some((s) => s.kind === 'request' && actionPattern.test(sentenceAt(s.start)));
+    const linkRisk = links.some((link) => !link.valid || link.reasons.length > 0);
+    const riskReasons = [];
+    if (linkRisk) riskReasons.push('직접 확인이 필요한 링크 형식');
+    if (requestAction) riskReasons.push('민감 정보·금전·설치 표현과 행동 요구가 함께 나타남');
+    return {links, spans: nonOverlapping, hasRequest, hasUrgency, requestAction, linkRisk, suppressed,
+      signalLevel: riskReasons.length ? 'risk' : 'review', riskReasons};
   }
   function highlight(message, spans) {
     let cursor = 0;
